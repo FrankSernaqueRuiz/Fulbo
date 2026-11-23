@@ -21,10 +21,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up JDK 21 (JetBrains)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          distribution: 'jetbrains' # Especifica el proveedor que Gradle está buscando
-          java-version: '21'        # La versión exacta que requiere el archivo de propiedades
+          distribution: 'jetbrains'
+          java-version: '21'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configurar Gradle (con caché)
         uses: gradle/actions/setup-gradle@v4
