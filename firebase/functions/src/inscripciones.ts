@@ -11,8 +11,12 @@ type Resultado = "aceptado" | "pendiente" | "lista_espera";
 
 export const solicitarInscripcion = onCall(async (req) => {
   const uid = exigirSesion(req);
-  const { partidoId, listaEspera } = req.data as { partidoId: string; listaEspera?: boolean };
-  if (typeof partidoId !== "string") throw new HttpsError("invalid-argument", "partidoId");
+  const data = (req.data ?? {}) as { partidoId?: string; listaEspera?: boolean };
+  const partidoId = (data.partidoId ?? "").trim();
+  if (!partidoId || !/^[A-Za-z0-9_-]{1,64}$/.test(partidoId)) {
+    throw new HttpsError("invalid-argument", "partidoId");
+  }
+  const listaEspera = Boolean(data.listaEspera);
 
   let resultado = "aceptado" as Resultado;
   let organizadorUid = "";
@@ -35,6 +39,12 @@ export const solicitarInscripcion = onCall(async (req) => {
     }
     if (!["publicado", "completo"].includes(partido.estado)) {
       throw new HttpsError("failed-precondition", "Este partido ya no acepta jugadores.");
+    }
+    // FUN-11: Verificar que el partido no haya empezado
+    if (partido.fecha_hora && typeof partido.fecha_hora.toMillis === "function") {
+      if (partido.fecha_hora.toMillis() <= Date.now()) {
+        throw new HttpsError("failed-precondition", "El partido ya comenzó.");
+      }
     }
 
     // 1) Sin cupos -> lista de espera (solo si el jugador la acepto)

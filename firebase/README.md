@@ -5,7 +5,7 @@ Todo lo que vive en Firebase y no en la app: reglas de seguridad, indices y Clou
 ```
 firebase/
 ├── firebase.json            configuracion de la CLI y de los emuladores
-├── .firebaserc              alias de proyectos: dev (fulbo-dev) y prod (fulbo-prod)
+├── .firebaserc              alias de proyectos: dev (fulbo-3b600) y prod (fulboprod-7af84)
 ├── firestore.rules          quien puede leer y escribir que
 ├── firestore.indexes.json   indices compuestos que piden las consultas
 ├── functions/               Cloud Functions en TypeScript (Node 22)

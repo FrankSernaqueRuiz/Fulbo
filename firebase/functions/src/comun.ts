@@ -38,13 +38,30 @@ export const refInscripcion = (partidoId: string, uid: string) =>
   db.doc(`partidos/${partidoId}/inscripciones/${uid}`);
 
 // ---- Seguridad ---------------------------------------------------------------
-/** Exige sesion y correo verificado. Devuelve el uid. */
+/** Exige sesion y correo verificado o login por teléfono. Devuelve el uid. */
 export function exigirSesion(req: CallableRequest<unknown>): string {
   if (!req.auth) throw new HttpsError("unauthenticated", "Inicia sesion.");
-  if (req.auth.token.email_verified !== true) {
-    throw new HttpsError("failed-precondition", "Verifica tu correo primero.");
+  const isEmailVerified = req.auth.token.email_verified === true;
+  const isPhoneAuth = req.auth.token.firebase?.sign_in_provider === "phone";
+  if (!isEmailVerified && !isPhoneAuth) {
+    throw new HttpsError("failed-precondition", "Verifica tu correo o teléfono primero.");
   }
   return req.auth.uid;
+}
+
+const ID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+export function validarId(v: unknown, campo = "id"): string {
+  if (typeof v !== "string" || !ID_REGEX.test(v)) {
+    throw new HttpsError("invalid-argument", `Identificador invalido: ${campo}`);
+  }
+  return v;
+}
+
+export function exigirObjeto<T = Record<string, unknown>>(data: unknown): T {
+  if (!data || typeof data !== "object") {
+    throw new HttpsError("invalid-argument", "Datos de solicitud invalidos.");
+  }
+  return data as T;
 }
 
 export function texto(v: unknown, campo: string, max = 60): string {

@@ -6,7 +6,10 @@ import org.koin.dsl.KoinAppDeclaration
 import pe.fulbo.app.core.firebase.ConfigApp
 import pe.fulbo.app.core.firebase.conectarEmuladores
 import pe.fulbo.app.core.firebase.firebaseModule
+import pe.fulbo.app.feature.auth.di.authModule
 import pe.fulbo.app.feature.canchas.di.canchasModule
+
+import pe.fulbo.app.feature.partidos.di.partidosModule
 
 /**
  * Junta los módulos de cada feature. Al crear un feature nuevo, agrega aquí su `xxxModule`.
@@ -22,8 +25,9 @@ fun initKoin(config: ConfigApp = ConfigApp(), extra: KoinAppDeclaration = {}): K
         extra()
         modules(
             firebaseModule,
+            authModule,
+            partidosModule,
             canchasModule,
-            // authModule, partidosModule, … (se agregan con cada feature)
         )
     }
 }

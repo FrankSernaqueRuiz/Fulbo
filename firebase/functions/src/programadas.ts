@@ -27,6 +27,24 @@ export const tareasCadaQuinceMinutos = onSchedule(
       estado: d.get("se_juega") === true ? "en_juego" : "vencido",
     }));
     enCalif.forEach((d) => batch.update(d.ref, { estado: "cerrado" }));
+
+    // NAV-14: Vencimiento de planes Premium
+    const usuariosVencidos = await db.collection("usuarios")
+      .where("plan", "==", "premium")
+      .where("plan_vence_en", "<=", ahora)
+      .get();
+
+    for (const u of usuariosVencidos.docs) {
+      const susSnap = await db.collection("suscripciones")
+        .where("usuario_uid", "==", u.id)
+        .where("estado", "==", "gracia")
+        .get();
+      const enGracia = susSnap.docs.some((s) => s.get("gracia_hasta") > ahora);
+      if (!enGracia) {
+        batch.update(u.ref, { plan: "gratuito", plan_vence_en: null });
+      }
+    }
+
     await batch.commit();
 
     // Recordatorio 3 h antes (ventana de 15 min para no repetirlo)

@@ -21,7 +21,14 @@ import pe.fulbo.app.resources.tab_perfil
 // Onboarding y bienvenida
 @Serializable data object Bienvenida
 @Serializable data object CreaTuPerfil
-@Serializable data object TusDeportes
+@Serializable data class TusDeportes(
+    val nombre: String,
+    val apellido: String,
+    val alias: String,
+    val correo: String,
+    val contrasena: String,
+    val fechaNacimiento: String,
+)
 @Serializable data object Registro
 @Serializable data object Login
 

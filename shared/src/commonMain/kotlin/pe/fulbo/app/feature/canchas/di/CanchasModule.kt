@@ -5,10 +5,10 @@ import org.koin.dsl.bind
 import org.koin.dsl.module
 import pe.fulbo.app.feature.canchas.CanchasViewModel
 import pe.fulbo.app.feature.canchas.data.CanchasRepository
-import pe.fulbo.app.feature.canchas.data.FakeCanchasRepository
+import pe.fulbo.app.feature.canchas.data.FirestoreCanchasRepository
 
 val canchasModule = module {
-    // Cambiar a FirestoreCanchasRepository cuando la colección `canchas` esté lista
-    single { FakeCanchasRepository() } bind CanchasRepository::class
+    single { FirestoreCanchasRepository(get()) } bind CanchasRepository::class
+    // authRepo se inyecta automáticamente desde authModule (mismo tipo AuthRepository)
     viewModelOf(::CanchasViewModel)
 }

@@ -33,16 +33,24 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import pe.fulbo.app.core.designsystem.theme.FulboColors
 import pe.fulbo.app.core.model.Posicion
@@ -387,13 +395,24 @@ fun FulboTextField(
     placeholder: String = "",
     supportingText: String? = null,
     isSingleLine: Boolean = true,
+    isError: Boolean = false,
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailingIcon: @Composable (() -> Unit)? = null,
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .bringIntoViewRequester(bringIntoViewRequester)
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = FulboColors.TextSecondary,
+            color = if (isError) FulboColors.Red else FulboColors.TextSecondary,
             modifier = Modifier.padding(bottom = 6.dp),
         )
         OutlinedTextField(
@@ -404,23 +423,36 @@ fun FulboTextField(
             } else null,
             trailingIcon = trailingIcon,
             singleLine = isSingleLine,
+            isError = isError,
+            visualTransformation = visualTransformation,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             shape = MaterialTheme.shapes.medium,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = FulboColors.Surface,
                 unfocusedContainerColor = FulboColors.Surface,
-                focusedBorderColor = FulboColors.Green,
-                unfocusedBorderColor = FulboColors.Outline,
+                focusedBorderColor = if (isError) FulboColors.Red else FulboColors.Green,
+                unfocusedBorderColor = if (isError) FulboColors.Red else FulboColors.Outline,
                 focusedTextColor = FulboColors.TextPrimary,
                 unfocusedTextColor = FulboColors.TextPrimary,
                 cursorColor = FulboColors.Green,
+                errorBorderColor = FulboColors.Red,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusEvent { focusState ->
+                    if (focusState.isFocused) {
+                        coroutineScope.launch {
+                            bringIntoViewRequester.bringIntoView()
+                        }
+                    }
+                },
         )
         if (supportingText != null) {
             Text(
                 text = supportingText,
                 style = MaterialTheme.typography.bodySmall,
-                color = FulboColors.TextSecondary,
+                color = if (isError) FulboColors.Red else FulboColors.TextSecondary,
                 modifier = Modifier.padding(top = 4.dp, start = 4.dp),
             )
         }

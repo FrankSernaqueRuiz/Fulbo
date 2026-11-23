@@ -36,11 +36,23 @@ import pe.fulbo.app.feature.partidos.PartidosScreen
 import pe.fulbo.app.feature.partidos.PublicarPartidoScreen
 import pe.fulbo.app.feature.perfil.PerfilScreen
 
+import androidx.compose.runtime.remember
+import org.koin.compose.koinInject
+import pe.fulbo.app.feature.auth.LoginScreen
+import pe.fulbo.app.feature.auth.domain.AuthRepository
+
 @Composable
-fun FulboNavHost(navController: NavHostController = rememberNavController()) {
+fun FulboNavHost(
+    navController: NavHostController = rememberNavController(),
+    authRepository: AuthRepository = koinInject(),
+) {
     val backStack by navController.currentBackStackEntryAsState()
     val destino = backStack?.destination
     val mostrarBarra = Pestana.entries.any { destino.esRuta(it.ruta) }
+
+    val startDestination = remember {
+        if (authRepository.estaAutenticado) Partidos else Bienvenida
+    }
 
     Scaffold(
         containerColor = FulboColors.Background,
@@ -48,34 +60,42 @@ fun FulboNavHost(navController: NavHostController = rememberNavController()) {
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = Bienvenida,
+            startDestination = startDestination,
             modifier = Modifier.padding(padding),
         ) {
             // ---------- Onboarding y Autenticación ----------
             composable<Bienvenida> {
-                val entrar = {
-                    navController.navigate(Partidos) { popUpTo(Bienvenida) { inclusive = true } }
-                }
                 WelcomeScreen(
                     onCrearCuenta = { navController.navigate(CreaTuPerfil) },
-                    onGoogle = entrar,
-                    onNumero = entrar,
-                    onIniciarSesion = entrar,
+                    onGoogle = { navController.navigate(Login) },
+                    onNumero = { navController.navigate(Login) },
+                    onIniciarSesion = { navController.navigate(Login) },
                 )
             }
 
             // Paso 1 de 2: Crea tu perfil (Mockup página 1)
             composable<CreaTuPerfil> {
                 CreaTuPerfilScreen(
-                    onSiguiente = { _, _, _ ->
-                        navController.navigate(TusDeportes)
+                    onSiguiente = { nom, ape, ali, cor, pass, fec ->
+                        navController.navigate(
+                            TusDeportes(
+                                nombre = nom,
+                                apellido = ape,
+                                alias = ali,
+                                correo = cor,
+                                contrasena = pass,
+                                fechaNacimiento = fec,
+                            ),
+                        )
                     },
                 )
             }
 
             // Paso 2 de 2: Tus deportes (Mockups páginas 11, 12, 13)
-            composable<TusDeportes> {
+            composable<TusDeportes> { entry ->
+                val datos = entry.toRoute<TusDeportes>()
                 TusDeportesScreen(
+                    datosRegistro = datos,
                     onCrearPerfil = {
                         navController.navigate(Partidos) {
                             popUpTo(Bienvenida) { inclusive = true }
@@ -84,14 +104,41 @@ fun FulboNavHost(navController: NavHostController = rememberNavController()) {
                 )
             }
 
-            composable<Registro> { PlaceholderScreen("Registro", "M1 · Registro y perfil") }
-            composable<Login> { PlaceholderScreen("Iniciar sesión", "M1 · Registro y perfil") }
+            composable<Registro> {
+                CreaTuPerfilScreen(
+                    onSiguiente = { nom, ape, ali, cor, pass, fec ->
+                        navController.navigate(
+                            TusDeportes(
+                                nombre = nom,
+                                apellido = ape,
+                                alias = ali,
+                                correo = cor,
+                                contrasena = pass,
+                                fechaNacimiento = fec,
+                            ),
+                        )
+                    },
+                )
+            }
+
+            composable<Login> {
+                LoginScreen(
+                    onVolver = { navController.popBackStack() },
+                    onLoginExitoso = {
+                        navController.navigate(Partidos) {
+                            popUpTo(Bienvenida) { inclusive = true }
+                        }
+                    },
+                    onIrARegistro = { navController.navigate(CreaTuPerfil) },
+                )
+            }
 
             // ---------- 4 Pestañas principales de los Mockups ----------
             // 1. Partidos cerca (Mockup página 2)
             composable<Partidos> {
                 PartidosScreen(
                     onPublicarPartido = { navController.navigate(PublicarPartido()) },
+                    onPartidoClick = { id -> navController.navigate(SalaPartido(id)) },
                 )
             }
 
@@ -111,12 +158,19 @@ fun FulboNavHost(navController: NavHostController = rememberNavController()) {
                     onVerAlineacion = { navController.navigate(Alineacion) },
                     onVerMarcos = { navController.navigate(MarcosRango) },
                     onEditarEquipo = { navController.navigate(EditarEquipo) },
+                    onIrAPremium = { navController.navigate(Premium) },
                 )
             }
 
             // 4. Perfil de usuario (Mockup página 4)
             composable<Perfil> {
-                PerfilScreen()
+                PerfilScreen(
+                    onCerrarSesion = {
+                        navController.navigate(Bienvenida) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                )
             }
 
             // ---------- Vistas de Detalle y Flujos Secundarios ----------

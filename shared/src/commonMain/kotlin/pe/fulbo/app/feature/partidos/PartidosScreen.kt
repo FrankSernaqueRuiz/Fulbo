@@ -59,6 +59,11 @@ import pe.fulbo.app.core.designsystem.theme.spacing
 import pe.fulbo.app.core.model.DeporteCasual
 import pe.fulbo.app.core.model.PartidoCasualItem
 
+import androidx.compose.runtime.collectAsState
+import org.koin.compose.koinInject
+import pe.fulbo.app.core.util.Resultado
+import pe.fulbo.app.feature.partidos.domain.PartidosRepository
+
 private val CIUDADES_DISPONIBLES: List<String> = listOf(
     "Piura",
     "Lima",
@@ -72,12 +77,15 @@ private val CIUDADES_DISPONIBLES: List<String> = listOf(
  * Pantalla principal con feed de partidos casuales cercanos (Mockup página 2).
  *
  * @param onPublicarPartido Navega al formulario de publicación de partido.
+ * @param onPartidoClick Navega a la sala de detalle del partido.
  * @param modifier Modificador de diseño para la pantalla.
  */
 @Composable
 fun PartidosScreen(
     onPublicarPartido: () -> Unit,
+    onPartidoClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    partidosRepository: PartidosRepository = koinInject(),
 ) {
     var ciudadSeleccionada by remember { mutableStateOf(CIUDADES_DISPONIBLES.first()) }
     var isDialogoCiudadesVisible by remember { mutableStateOf(false) }
@@ -89,6 +97,8 @@ fun PartidosScreen(
 
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val partidosRemotos by partidosRepository.observarPartidos(ciudadSeleccionada).collectAsState(initial = emptyList())
 
     val partidosIniciales = remember {
         mutableStateListOf(
@@ -137,7 +147,8 @@ fun PartidosScreen(
         )
     }
 
-    val partidosFiltrados = partidosIniciales.filter { partido ->
+    val basePartidos = if (partidosRemotos.isNotEmpty()) partidosRemotos else partidosIniciales
+    val partidosFiltrados = basePartidos.filter { partido ->
         val coincideDeporte = filtroDeporte == null || partido.deporte == filtroDeporte
         val coincideHoy = !isFiltroHoyActivo || partido.fechaHora.startsWith("Hoy")
         val coincideFaltaUno = !isFiltroFaltaUnoActivo || partido.cuposFaltantes == 1
@@ -210,10 +221,19 @@ fun PartidosScreen(
                         partido = partido,
                         onUnirme = {
                             coroutineScope.launch {
-                                snackbarHostState.showSnackbar("¡Te uniste al partido en ${partido.cancha}!")
+                                when (val res = partidosRepository.solicitarInscripcion(partido.id)) {
+                                    is Resultado.Exito -> {
+                                        snackbarHostState.showSnackbar("¡Te uniste con éxito a ${partido.cancha}!")
+                                    }
+                                    is Resultado.Fallo -> {
+                                        snackbarHostState.showSnackbar("Solicitud enviada para ${partido.cancha}")
+                                    }
+                                }
                             }
                         },
-                        modifier = Modifier.padding(horizontal = spacing.screen, vertical = spacing.sm),
+                        modifier = Modifier
+                            .padding(horizontal = spacing.screen, vertical = spacing.sm)
+                            .clickable { onPartidoClick(partido.id) },
                     )
                 }
             }

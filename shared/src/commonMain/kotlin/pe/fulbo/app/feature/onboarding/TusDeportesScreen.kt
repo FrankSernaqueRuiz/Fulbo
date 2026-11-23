@@ -32,12 +32,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import pe.fulbo.app.core.designsystem.component.FulboChip
 import pe.fulbo.app.core.designsystem.component.FulboPrimaryButton
 import pe.fulbo.app.core.designsystem.component.StatusPill
 import pe.fulbo.app.core.designsystem.theme.FulboColors
 import pe.fulbo.app.core.designsystem.theme.spacing
 import pe.fulbo.app.core.model.DeporteCasual
+import pe.fulbo.app.core.util.Resultado
+import pe.fulbo.app.feature.auth.domain.AuthRepository
+import pe.fulbo.app.feature.auth.domain.DatosCompletarPerfil
+import pe.fulbo.app.navigation.TusDeportes
 
 private const val MAXIMO_POSICIONES_SELECCIONABLES = 2
 
@@ -48,10 +55,15 @@ private const val MAXIMO_POSICIONES_SELECCIONABLES = 2
  */
 @Composable
 fun TusDeportesScreen(
+    datosRegistro: TusDeportes,
     onCrearPerfil: () -> Unit,
     modifier: Modifier = Modifier,
+    authRepository: AuthRepository = koinInject(),
 ) {
     var deporteActivo by remember { mutableStateOf(DeporteCasual.FUTBOL) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMensaje by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     val mapaPosiciones = remember {
         mutableStateMapOf(
@@ -152,12 +164,69 @@ fun TusDeportesScreen(
                 )
             }
 
+        if (errorMensaje != null) {
+            Text(
+                text = errorMensaje ?: "",
+                style = MaterialTheme.typography.bodyMedium,
+                color = FulboColors.Red,
+                modifier = Modifier.padding(vertical = spacing.xs),
+            )
+        }
+
         Spacer(Modifier.weight(1f))
         Spacer(Modifier.height(spacing.xl))
 
         FulboPrimaryButton(
             text = "Crear mi perfil",
-            onClick = onCrearPerfil,
+            isLoading = isLoading,
+            onClick = {
+                val posFutbol = mapaPosiciones[DeporteCasual.FUTBOL]?.firstOrNull()?.lowercase() ?: "medio"
+                val posicionCanonica = when {
+                    posFutbol.contains("arquero") || posFutbol.contains("portero") -> "arquero"
+                    posFutbol.contains("defens") || posFutbol.contains("lateral") || posFutbol.contains("central") -> "defensa"
+                    posFutbol.contains("delanter") || posFutbol.contains("extremo") || posFutbol.contains("punta") -> "delantero"
+                    else -> "medio"
+                }
+
+                val nivelFutbol = mapaNiveles[DeporteCasual.FUTBOL]?.lowercase() ?: "intermedio"
+                val nivelCanonico = when {
+                    nivelFutbol.contains("recien") || nivelFutbol.contains("empiezo") -> "recien"
+                    nivelFutbol.contains("casual") -> "casual"
+                    nivelFutbol.contains("competitivo") || nivelFutbol.contains("pro") -> "competitivo"
+                    else -> "intermedio"
+                }
+
+                isLoading = true
+                errorMensaje = null
+
+                scope.launch {
+                    when (val reg = authRepository.crearCuenta(datosRegistro.correo, datosRegistro.contrasena)) {
+                        is Resultado.Exito -> {
+                            val perfilResult = authRepository.completarPerfil(
+                                DatosCompletarPerfil(
+                                    nombre = datosRegistro.nombre,
+                                    apellido = datosRegistro.apellido,
+                                    alias = datosRegistro.alias,
+                                    fechaNacimiento = datosRegistro.fechaNacimiento,
+                                    ciudad = "Lima",
+                                    posicion = posicionCanonica,
+                                    nivel = nivelCanonico,
+                                    aceptaTerminos = true,
+                                )
+                            )
+                            isLoading = false
+                            when (perfilResult) {
+                                is Resultado.Exito -> onCrearPerfil()
+                                is Resultado.Fallo -> errorMensaje = "Cuenta creada pero falló el perfil: ${perfilResult.error}"
+                            }
+                        }
+                        is Resultado.Fallo -> {
+                            isLoading = false
+                            errorMensaje = "No se pudo crear la cuenta. Verifica que el correo no esté ya registrado."
+                        }
+                    }
+                }
+            },
         )
         Spacer(Modifier.height(spacing.md))
     }

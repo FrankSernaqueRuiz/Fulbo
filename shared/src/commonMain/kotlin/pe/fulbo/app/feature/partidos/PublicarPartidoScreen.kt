@@ -31,6 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import pe.fulbo.app.core.designsystem.component.FulboChip
 import pe.fulbo.app.core.designsystem.component.FulboPrimaryButton
 import pe.fulbo.app.core.designsystem.component.FulboStepper
@@ -38,6 +41,8 @@ import pe.fulbo.app.core.designsystem.component.FulboTextField
 import pe.fulbo.app.core.designsystem.theme.FulboColors
 import pe.fulbo.app.core.designsystem.theme.spacing
 import pe.fulbo.app.core.model.DeporteCasual
+import pe.fulbo.app.core.util.Resultado
+import pe.fulbo.app.feature.partidos.domain.PartidosRepository
 
 private val NIVELES_PARTIDO_DISPONIBLES: List<String> = listOf("Casual", "Intermedio", "Todos")
 private const val MINIMO_CUPOS_FALTANTES: Int = 1
@@ -58,6 +63,7 @@ fun PublicarPartidoScreen(
     onPartidoPublicado: () -> Unit,
     canchaInicial: String = "Cancha Los Álamos",
     modifier: Modifier = Modifier,
+    partidosRepository: PartidosRepository = koinInject(),
 ) {
     var deporteSeleccionado by remember { mutableStateOf(DeporteCasual.FUTBOL) }
     var cancha by remember { mutableStateOf(canchaInicial) }
@@ -67,6 +73,9 @@ fun PublicarPartidoScreen(
     var cuposFaltantes by remember { mutableStateOf(2) }
     var nivelBuscado by remember { mutableStateOf("Intermedio") }
     var costoPersona by remember { mutableStateOf("8") }
+    var isPublicando by remember { mutableStateOf(false) }
+    var errorMensaje by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     val canPublicar = cancha.isNotBlank() && fecha.isNotBlank() && hora.isNotBlank()
     val spacing = MaterialTheme.spacing
@@ -176,12 +185,45 @@ fun PublicarPartidoScreen(
                 placeholder = "0 para gratis, o monto en soles",
             )
 
+            if (errorMensaje != null) {
+                Spacer(Modifier.height(spacing.xs))
+                Text(
+                    text = errorMensaje ?: "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FulboColors.Red,
+                )
+            }
+
             Spacer(Modifier.height(spacing.xl))
 
             FulboPrimaryButton(
                 text = "Publicar partido",
                 isEnabled = canPublicar,
-                onClick = onPartidoPublicado,
+                isLoading = isPublicando,
+                onClick = {
+                    isPublicando = true
+                    errorMensaje = null
+                    scope.launch {
+                        val costo = costoPersona.toDoubleOrNull() ?: 0.0
+                        when (partidosRepository.publicarPartido(
+                            canchaNombre = cancha.trim(),
+                            deporte = deporteSeleccionado,
+                            formato = formatoSeleccionado,
+                            cuposFaltantes = cuposFaltantes,
+                            nivelBuscado = nivelBuscado,
+                            costoPersona = costo,
+                        )) {
+                            is Resultado.Exito -> {
+                                isPublicando = false
+                                onPartidoPublicado()
+                            }
+                            is Resultado.Fallo -> {
+                                isPublicando = false
+                                errorMensaje = "Error al publicar en Firestore. Verifica tu conexión y sesión."
+                            }
+                        }
+                    }
+                },
             )
 
             Spacer(Modifier.height(spacing.lg))
