@@ -25,12 +25,10 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // Acepta correo verificado o autenticación por número de teléfono
+    // TODO(blaze): hoy NO se exige correo verificado (etapa Spark, sin pantalla
+    // "Revisa tu correo"). Para volver a exigirlo, usar esta funcion en perfilCompleto().
     function correoVerificado() {
-      return signedIn() && (
-        request.auth.token.email_verified == true ||
-        (request.auth.token.firebase != null && request.auth.token.firebase.sign_in_provider == 'phone')
-      );
+      return signedIn() && request.auth.token.email_verified == true;
     }
 
     function esAdmin() {
@@ -42,59 +40,15 @@ service cloud.firestore {
       return /databases/$(database)/documents/usuarios/$(uid);
     }
 
-    // El documento usuarios/{uid} solo lo crea la funcion completarPerfil
-    // despues de verificar la edad. Si existe, el perfil esta completo.
+    // Si existe usuarios/{uid}, el perfil esta completo.
+    // TODO(blaze): volver a exigir correoVerificado() cuando exista la pantalla de verificacion.
     function perfilCompleto() {
-      return correoVerificado() && exists(rutaUsuario(request.auth.uid));
+      return signedIn() && exists(rutaUsuario(request.auth.uid));
     }
 
     function esPremium() {
       return perfilCompleto()
         && get(rutaUsuario(request.auth.uid)).data.plan == 'premium';
-    }
-
-    function rutaDueno(uid) {
-      return /databases/$(database)/documents/duenos_cancha/$(uid);
-    }
-
-    // Un dueno se registra solo, pero nace SIN verificar. Hasta que un admin
-    // lo apruebe (funcion verificarDueno) no puede publicar ninguna cancha.
-    function esDuenoVerificado() {
-      return correoVerificado()
-        && exists(rutaDueno(request.auth.uid))
-        && get(rutaDueno(request.auth.uid)).data.verificado == true;
-    }
-
-    function datosCanchaValidos() {
-      return request.resource.data.nombre is string
-        && request.resource.data.nombre.size() >= 3
-        && request.resource.data.nombre.size() <= 80
-        && request.resource.data.direccion is string
-        && request.resource.data.direccion.size() <= 160
-        && request.resource.data.distrito is string
-        && request.resource.data.distrito.size() <= 60
-        && request.resource.data.ciudad is string
-        && request.resource.data.ciudad.size() <= 60
-        && request.resource.data.ubicacion is latlng
-        && request.resource.data.superficie in ['sintetico', 'grass', 'losa', 'cemento']
-        && request.resource.data.formatos is list
-        && request.resource.data.formatos.size() >= 1
-        && request.resource.data.formatos.size() <= 4
-        && request.resource.data.formatos.hasOnly(['4v4', '5v5', '7v7', '11v11'])
-        && request.resource.data.techada is bool
-        && request.resource.data.precio_hora is number
-        && request.resource.data.precio_hora >= 0
-        && request.resource.data.precio_hora <= 1000
-        && request.resource.data.abre_min is int
-        && request.resource.data.abre_min >= 0
-        && request.resource.data.abre_min <= 1440
-        && request.resource.data.cierra_min is int
-        && request.resource.data.cierra_min >= 0
-        && request.resource.data.cierra_min <= 1440
-        && request.resource.data.activa is bool
-        && (!('telefono' in request.resource.data)
-            || (request.resource.data.telefono is string
-                && request.resource.data.telefono.matches('[0-9]{6,9}')));
     }
 
     function soloCambia(campos) {
@@ -106,104 +60,95 @@ service cloud.firestore {
     }
 
     // ---------- usuarios ------------------------------------------------------
-    // Perfil publico: legible por el propio usuario o por cualquiera con perfil completo (REG-01).
+    // Perfil publico: lo ve cualquier usuario con sesion (tarjetas, plantillas).
     match /usuarios/{uid} {
-      allow read: if signedIn() && (esYo(uid) || perfilCompleto());
+      allow read: if signedIn();
 
-      // Crear: permite al usuario guardar su perfil inicial o via Cloud Function.
-      allow create: if esYo(uid);
-      allow delete: if esYo(uid) || esAdmin();
+      // Crear: ETAPA SPARK (sin Cloud Functions). El dueno crea su propio perfil
+      // con reputacion en blanco y plan gratuito; no puede darse plan, faltas
+      // ni partidos. Sin DNI: la app solo confirma "tengo 16 anos o mas".
+      // TODO(blaze): volver a `allow create: if false` y crear el perfil con la
+      // Cloud Function completarPerfil (valida DNI y edad en el servidor).
+      allow create: if esYo(uid)
+        && request.resource.data.keys().hasOnly([
+             'nombre', 'apellido', 'alias', 'ciudad', 'deportes', 'ubicacion',
+             'foto_url', 'mayor_de_16', 'rep_global', 'rep_puntualidad',
+             'rep_asistencia', 'rep_pago', 'rep_trato', 'num_calificaciones',
+             'partidos_jugados', 'faltas', 'plan', 'plan_vence_en', 'creado_en'])
+        && request.resource.data.keys().hasAll([
+             'nombre', 'apellido', 'alias', 'deportes', 'mayor_de_16', 'plan', 'creado_en'])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() >= 2
+        && request.resource.data.nombre.size() <= 50
+        && request.resource.data.apellido is string
+        && request.resource.data.apellido.size() >= 2
+        && request.resource.data.apellido.size() <= 50
+        && request.resource.data.alias is string
+        && request.resource.data.alias.size() <= 30
+        && request.resource.data.deportes is map
+        && request.resource.data.mayor_de_16 == true
+        && request.resource.data.plan == 'gratuito'
+        && request.resource.data.get('num_calificaciones', 0) == 0
+        && request.resource.data.get('partidos_jugados', 0) == 0
+        && request.resource.data.get('faltas', 0) == 0
+        && request.resource.data.get('rep_global', null) == null
+        && request.resource.data.get('plan_vence_en', null) == null
+        && request.resource.data.creado_en == request.time;
 
-      // El dueno solo puede editar datos cosmeticos con validaciones de tipo y tamano (REG-04).
+      allow delete: if false;
+
+      // El dueno solo puede editar datos "cosmeticos". Nunca reputacion, plan,
+      // faltas ni partidos_jugados.
       allow update: if esYo(uid)
-        && soloCambia(['alias', 'ciudad', 'posicion', 'nivel', 'ubicacion', 'foto_url'])
-        && (!('alias' in request.resource.data)
-            || (request.resource.data.alias is string && request.resource.data.alias.size() <= 30))
-        && (!('ciudad' in request.resource.data)
-            || (request.resource.data.ciudad is string && request.resource.data.ciudad.size() <= 60))
-        && (!('ubicacion' in request.resource.data)
-            || request.resource.data.ubicacion == null
-            || request.resource.data.ubicacion is latlng)
-        && (!('foto_url' in request.resource.data)
-            || request.resource.data.foto_url == null
-            || (request.resource.data.foto_url is string && request.resource.data.foto_url.size() <= 500))
+        && soloCambia(['alias', 'ciudad', 'deportes', 'posicion', 'nivel', 'ubicacion', 'foto_url'])
         && (!('posicion' in request.resource.data)
             || request.resource.data.posicion in ['arquero', 'defensa', 'medio', 'delantero'])
         && (!('nivel' in request.resource.data)
             || request.resource.data.nivel in ['recien', 'casual', 'intermedio', 'competitivo']);
 
-      // Datos personales (fecha_nacimiento, aceptacion de terminos): solo los lee y escribe el dueno.
+      // Datos sensibles (dni_hash, fecha_nacimiento): solo los lee el dueno.
       match /privado/{doc} {
-        allow read, write: if esYo(uid);
+        allow read: if esYo(uid);
+        allow write: if false;
       }
 
-      // Tokens de notificaciones push (FCM), uno por dispositivo (REG-09).
+      // Tokens de notificaciones push (FCM), uno por dispositivo.
       match /dispositivos/{token} {
         allow read, delete: if esYo(uid);
         allow create, update: if esYo(uid)
-          && token.size() <= 256
           && request.resource.data.keys().hasOnly(['plataforma', 'actualizado_en'])
-          && request.resource.data.plataforma in ['android', 'ios']
-          && request.resource.data.actualizado_en == request.time;
+          && request.resource.data.plataforma in ['android', 'ios'];
       }
     }
 
-    // Acumuladores de reputacion: solo servidor.
+    // Indice de DNI ya usados y acumuladores de reputacion: solo servidor.
+    match /dni_registrados/{hash} { allow read, write: if false; }
     match /reputacion/{uid}       { allow read, write: if false; }
 
     // ---------- duenos de cancha y canchas -----------------------------------
-    // REG-02: solo el propio dueno o un admin pueden leer datos sensibles (RUC, razon social).
     match /duenos_cancha/{uid} {
-      allow read: if esYo(uid) || esAdmin();
-
+      allow read: if signedIn();
       allow create: if esYo(uid)
-        && correoVerificado()
         && request.resource.data.verificado == false
-        && request.resource.data.keys().hasOnly(['razon_social', 'ruc', 'telefono', 'verificado'])
-        && request.resource.data.keys().hasAll(['razon_social', 'ruc', 'telefono', 'verificado'])
-        && request.resource.data.razon_social is string
-        && request.resource.data.razon_social.size() >= 3
-        && request.resource.data.razon_social.size() <= 120
-        && request.resource.data.ruc is string
-        && request.resource.data.ruc.matches('[0-9]{11}')
-        && request.resource.data.telefono is string
-        && request.resource.data.telefono.matches('[0-9]{6,9}');
-
+        && request.resource.data.keys().hasOnly(['razon_social', 'ruc', 'telefono', 'verificado']);
       allow update: if esYo(uid)
         && soloCambia(['razon_social', 'telefono']);
-
       allow delete: if false;
     }
 
     match /canchas/{canchaId} {
       allow read: if signedIn();
-
-      allow create: if esDuenoVerificado()
+      allow create: if signedIn()
         && request.resource.data.dueno_uid == request.auth.uid
-        && request.resource.data.keys().hasOnly([
-             'dueno_uid', 'nombre', 'direccion', 'distrito', 'ciudad',
-             'ubicacion', 'superficie', 'formatos', 'techada', 'precio_hora',
-             'abre_min', 'cierra_min', 'telefono', 'activa', 'creado_en'])
-        && request.resource.data.keys().hasAll([
-             'dueno_uid', 'nombre', 'direccion', 'distrito', 'ciudad',
-             'ubicacion', 'superficie', 'formatos', 'techada', 'precio_hora',
-             'abre_min', 'cierra_min', 'activa', 'creado_en'])
-        && datosCanchaValidos()
-        && request.resource.data.activa == true
-        && request.resource.data.creado_en == request.time;
-
-      allow update: if esDuenoVerificado()
+        && exists(/databases/$(database)/documents/duenos_cancha/$(request.auth.uid));
+      allow update: if signedIn()
         && resource.data.dueno_uid == request.auth.uid
-        && soloCambia([
-             'nombre', 'direccion', 'distrito', 'ciudad', 'ubicacion',
-             'superficie', 'formatos', 'techada', 'precio_hora',
-             'abre_min', 'cierra_min', 'telefono', 'activa'])
-        && datosCanchaValidos();
-
-      allow delete: if false;
+        && request.resource.data.dueno_uid == resource.data.dueno_uid;
+      allow delete: if false; // se desactiva con activa = false
     }
 
     // ---------- partidos ------------------------------------------------------
+    // El "borrador" vive solo en la app. En Firestore un partido nace PUBLICADO.
     match /partidos/{partidoId} {
       allow read: if signedIn();
 
@@ -215,16 +160,6 @@ service cloud.firestore {
              'ubicacion', 'ciudad', 'descripcion', 'estado', 'creado_en'])
         && request.resource.data.organizador_uid == request.auth.uid
         && request.resource.data.estado == 'publicado'
-        && request.resource.data.cancha_nombre is string
-        && request.resource.data.cancha_nombre.size() <= 100
-        && request.resource.data.ciudad is string
-        && request.resource.data.ciudad.size() <= 60
-        && (!('descripcion' in request.resource.data)
-            || request.resource.data.descripcion == null
-            || (request.resource.data.descripcion is string && request.resource.data.descripcion.size() <= 300))
-        && (!('rep_minima' in request.resource.data)
-            || request.resource.data.rep_minima == null
-            || (request.resource.data.rep_minima is number && request.resource.data.rep_minima >= 1 && request.resource.data.rep_minima <= 5))
         && request.resource.data.fecha_hora is timestamp
         && request.resource.data.fecha_hora > request.time
         && request.resource.data.formato in ['4v4', '5v5', '7v7', '11v11']
@@ -232,6 +167,7 @@ service cloud.firestore {
         && request.resource.data.cupos_totales is int
         && request.resource.data.cupos_totales >= 2
         && request.resource.data.cupos_totales <= 30
+        // el organizador ocupa el primer cupo
         && request.resource.data.cupos_libres == request.resource.data.cupos_totales - 1
         && request.resource.data.costo_persona is number
         && request.resource.data.costo_persona >= 0
@@ -239,32 +175,26 @@ service cloud.firestore {
         && request.resource.data.ubicacion is latlng
         && request.resource.data.creado_en == request.time;
 
+      // El organizador solo puede corregir estos campos. Cupos y estado los
+      // mueven las Cloud Functions (inscripciones, cancelar, finalizar).
       allow update: if signedIn()
         && resource.data.organizador_uid == request.auth.uid
         && resource.data.estado in ['publicado', 'completo']
-        && soloCambia(['cancha_confirmada', 'descripcion', 'costo_persona'])
-        && (!('costo_persona' in request.resource.data) || (request.resource.data.costo_persona is number && request.resource.data.costo_persona >= 0))
-        && (!('descripcion' in request.resource.data)
-            || request.resource.data.descripcion == null
-            || (request.resource.data.descripcion is string && request.resource.data.descripcion.size() <= 300));
+        && soloCambia(['cancha_confirmada', 'descripcion', 'costo_persona']);
 
       allow delete: if false;
 
-      // REG-03: Inscripciones solo legibles por el propio jugador o el organizador
+      // Plantilla: la ve todo el que tenga sesion; la escriben las funciones.
+      // El id del documento es el uid del jugador -> una inscripcion por persona.
       match /inscripciones/{uid} {
-        allow read: if signedIn() && (
-          esYo(uid) ||
-          get(/databases/$(database)/documents/partidos/$(partidoId)).data.organizador_uid == request.auth.uid
-        );
+        allow read: if signedIn();
         allow write: if false;
       }
 
       // Calificaciones: id = "<emisor>_<receptor>" -> una por pareja y partido.
       match /calificaciones/{calId} {
-        allow read: if signedIn() && (
-          resource.data.emisor_uid == request.auth.uid ||
-          resource.data.receptor_uid == request.auth.uid
-        );
+        // Nadie ve quien le puso que nota (evita represalias). Solo el emisor.
+        allow read: if signedIn() && resource.data.emisor_uid == request.auth.uid;
 
         allow create: if signedIn()
           && request.resource.data.keys().hasOnly([
@@ -273,7 +203,9 @@ service cloud.firestore {
           && request.resource.data.emisor_uid == request.auth.uid
           && request.resource.data.receptor_uid != request.auth.uid
           && calId == request.auth.uid + '_' + request.resource.data.receptor_uid
+          // el partido esta en su ventana de 48 h
           && get(/databases/$(database)/documents/partidos/$(partidoId)).data.estado == 'en_calificacion'
+          // los dos jugaron ese partido
           && get(/databases/$(database)/documents/partidos/$(partidoId)/inscripciones/$(request.auth.uid)).data.asistio == true
           && get(/databases/$(database)/documents/partidos/$(partidoId)/inscripciones/$(request.resource.data.receptor_uid)).data.asistio == true
           && puntaje(request.resource.data.puntualidad)
@@ -289,53 +221,23 @@ service cloud.firestore {
       }
     }
 
-    // Colección grupo de calificaciones para consultar reseñas recibidas
-    match /{path=**}/calificaciones/{calId} {
-      allow read: if signedIn() && (
-        resource.data.receptor_uid == request.auth.uid ||
-        resource.data.emisor_uid == request.auth.uid
-      );
-    }
-
     // ---------- equipos fijos (Premium) --------------------------------------
     match /equipos/{equipoId} {
       allow read: if signedIn();
       allow create: if esPremium()
         && request.resource.data.creador_uid == request.auth.uid
         && request.resource.data.keys().hasOnly(['nombre', 'ciudad', 'formato', 'creador_uid', 'creado_en'])
-        && request.resource.data.nombre is string
-        && request.resource.data.nombre.size() >= 3
-        && request.resource.data.nombre.size() <= 50
-        && request.resource.data.ciudad is string
-        && request.resource.data.ciudad.size() <= 60
         && request.resource.data.formato in ['4v4', '5v5', '7v7', '11v11'];
-
-      // REG-06: Validar en update exigiendo perfilCompleto
-      allow update: if perfilCompleto()
+      allow update: if signedIn()
         && resource.data.creador_uid == request.auth.uid
-        && soloCambia(['nombre', 'ciudad', 'formato'])
-        && request.resource.data.nombre is string
-        && request.resource.data.nombre.size() >= 3
-        && request.resource.data.nombre.size() <= 50
-        && request.resource.data.ciudad is string
-        && request.resource.data.ciudad.size() <= 60
-        && request.resource.data.formato in ['4v4', '5v5', '7v7', '11v11'];
-
+        && soloCambia(['nombre', 'ciudad', 'formato']);
       allow delete: if signedIn() && resource.data.creador_uid == request.auth.uid;
 
-      // REG-07: Invitaciones con consentimiento y control de estados
       match /miembros/{uid} {
         allow read: if signedIn();
         allow write: if signedIn()
-          && (
-            (get(/databases/$(database)/documents/equipos/$(equipoId)).data.creador_uid == request.auth.uid) ||
-            esYo(uid)
-          )
-          && (request.resource == null || (
-               request.resource.data.keys().hasOnly(['rol', 'estado'])
-               && request.resource.data.rol in ['titular', 'suplente']
-               && request.resource.data.estado in ['pendiente', 'aceptado', 'rechazado']
-          ));
+          && get(/databases/$(database)/documents/equipos/$(equipoId)).data.creador_uid == request.auth.uid
+          && (request.resource == null || request.resource.data.rol in ['titular', 'suplente']);
       }
     }
 
@@ -346,18 +248,14 @@ service cloud.firestore {
     }
 
     // ---------- reportes (moderacion) ----------------------------------------
-    // REG-08: Validación completa y prevención de duplicados
     match /reportes/{id} {
       allow create: if perfilCompleto()
         && request.resource.data.keys().hasOnly(['reportante_uid', 'reportado_uid', 'partido_id', 'motivo', 'estado', 'creado_en'])
         && request.resource.data.reportante_uid == request.auth.uid
         && request.resource.data.reportado_uid != request.auth.uid
-        && request.resource.data.partido_id is string
         && request.resource.data.estado == 'abierto'
         && request.resource.data.motivo is string
-        && request.resource.data.motivo.size() >= 5
-        && request.resource.data.motivo.size() <= 500
-        && request.resource.data.creado_en == request.time;
+        && request.resource.data.motivo.size() <= 500;
       allow read, update: if esAdmin();
       allow delete: if false;
     }

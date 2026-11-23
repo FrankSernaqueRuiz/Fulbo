@@ -3,6 +3,7 @@ package pe.fulbo.app.feature.perfil
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,12 +21,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.EventBusy
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.SportsSoccer
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.koin.compose.viewmodel.koinViewModel
+import pe.fulbo.app.feature.perfil.domain.PerfilUsuario
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import pe.fulbo.app.core.designsystem.component.FulboCard
+import pe.fulbo.app.core.designsystem.component.FulboSecondaryButton
 import pe.fulbo.app.core.designsystem.component.RankAvatar
 import pe.fulbo.app.core.designsystem.component.StarRatingBar
 import pe.fulbo.app.core.designsystem.theme.FulboColors
@@ -43,104 +50,44 @@ import pe.fulbo.app.core.designsystem.theme.spacing
 import pe.fulbo.app.core.model.RangoEquipo
 import pe.fulbo.app.core.model.ResenaJugador
 
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
-import org.koin.compose.koinInject
-import pe.fulbo.app.core.designsystem.component.FulboSecondaryButton
-import pe.fulbo.app.feature.auth.domain.AuthRepository
-
-import androidx.compose.runtime.collectAsState
-import pe.fulbo.app.core.model.PerfilUsuario
-
 private const val PUNTAJE_MAXIMO_CONDUCTA: Float = 5.0f
 
+/** Conecta la pantalla con el ViewModel: carga el perfil real del usuario con sesión. */
+@Composable
+fun PerfilRoute(
+    onCerrarSesion: () -> Unit,
+    viewModel: PerfilViewModel = koinViewModel(),
+) {
+    val estado by viewModel.uiState.collectAsStateWithLifecycle()
+    val perfil = estado.perfil
+    when {
+        perfil != null -> PerfilScreen(perfil = perfil, onCerrarSesion = onCerrarSesion)
+        estado.cargando -> Box(Modifier.fillMaxSize().background(FulboColors.Background), Alignment.Center) {
+            CircularProgressIndicator(color = FulboColors.Green)
+        }
+        else -> Column(
+            Modifier.fillMaxSize().background(FulboColors.Background).padding(MaterialTheme.spacing.screen),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.md, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(estado.error ?: "No se pudo cargar tu perfil.", color = FulboColors.TextSecondary)
+            FulboSecondaryButton(text = "Reintentar", onClick = viewModel::cargar)
+            FulboSecondaryButton(text = "Cerrar sesión", onClick = onCerrarSesion)
+        }
+    }
+}
+
 /**
- * Pantalla de perfil de jugador con reputación, desglose de conducta y reseñas (Mockup página 4).
- *
- * @param onCerrarSesion Callback cuando el usuario cierra sesión o elimina su cuenta.
- * @param modifier Modificador de Compose.
+ * Pantalla de perfil de jugador con reputación y estadísticas (Mockup página 4).
+ * Las reseñas individuales llegarán con las calificaciones; por ahora no se muestran.
  */
 @Composable
 fun PerfilScreen(
-    onCerrarSesion: () -> Unit = {},
+    perfil: PerfilUsuario,
     modifier: Modifier = Modifier,
-    authRepository: AuthRepository = koinInject(),
+    onCerrarSesion: (() -> Unit)? = null,
 ) {
     val spacing = MaterialTheme.spacing
-    val scope = rememberCoroutineScope()
-    var mostrarDialogoEliminar by remember { mutableStateOf(false) }
-    var isProcessing by remember { mutableStateOf(false) }
-
-    val perfilReal by authRepository.observarMiPerfil().collectAsState(initial = null)
-    val resenasReales by authRepository.observarMisResenas().collectAsState(initial = emptyList())
-
-    val nombreMostrar = perfilReal?.let { "${it.nombre} ${it.apellido}".trim() }?.ifBlank { null } ?: "Mi Perfil"
-    val aliasMostrar = perfilReal?.alias?.ifBlank { null } ?: "Jugador"
-    val posicionMostrar = perfilReal?.posicion?.replaceFirstChar { it.uppercase() } ?: "Medio"
-    val nivelMostrar = perfilReal?.nivel?.replaceFirstChar { it.uppercase() } ?: "Intermedio"
-    val inicialesMostrar = perfilReal?.iniciales ?: "FP"
-    val rangoMostrar = if (perfilReal?.plan == "premium") RangoEquipo.ORO else RangoEquipo.PLATA
-
-    val partidosJugadosMostrar = perfilReal?.partidosJugados ?: 0
-    val faltasMostrar = perfilReal?.faltas ?: 0
-    val ratingMostrar = perfilReal?.repGlobal
-    val resenasMostrar = perfilReal?.numCalificaciones ?: 0
-    val puntPuntualidad = perfilReal?.repPuntualidad
-    val puntAsistencia = perfilReal?.repAsistencia
-    val puntPago = perfilReal?.repPago
-    val puntTrato = perfilReal?.repTrato
-
-    if (mostrarDialogoEliminar) {
-        AlertDialog(
-            onDismissRequest = { if (!isProcessing) mostrarDialogoEliminar = false },
-            title = {
-                Text(
-                    text = "Eliminar cuenta permanentemente",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = FulboColors.TextPrimary,
-                )
-            },
-            text = {
-                Text(
-                    text = "¿Estás seguro de que deseas eliminar tu cuenta? Esta acción no se puede deshacer. Se borrarán todos tus datos personales, reputación e historial.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = FulboColors.TextSecondary,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        isProcessing = true
-                        scope.launch {
-                            authRepository.eliminarCuenta()
-                            isProcessing = false
-                            mostrarDialogoEliminar = false
-                            onCerrarSesion()
-                        }
-                    },
-                    enabled = !isProcessing,
-                ) {
-                    Text("Eliminar definitivamente", color = FulboColors.Red, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { mostrarDialogoEliminar = false },
-                    enabled = !isProcessing,
-                ) {
-                    Text("Cancelar", color = FulboColors.TextSecondary)
-                }
-            },
-            containerColor = FulboColors.Surface,
-        )
-    }
 
     LazyColumn(
         modifier = modifier
@@ -151,67 +98,47 @@ fun PerfilScreen(
     ) {
         item {
             PerfilCabecera(
-                nombre = nombreMostrar,
-                alias = aliasMostrar,
-                posicion = posicionMostrar,
-                nivel = nivelMostrar,
-                iniciales = inicialesMostrar,
-                rango = rangoMostrar,
+                nombre = perfil.nombreCompleto,
+                alias = perfil.alias,
+                posicion = perfil.posicion ?: "Sin posición",
+                nivel = perfil.nivel ?: "Sin nivel",
+                iniciales = perfil.iniciales,
+                rango = RangoEquipo.BRONCE,
             )
         }
 
         item {
-            PerfilReputacionCard(
-                rating = ratingMostrar,
-                totalResenas = resenasMostrar,
-                puntajePuntualidad = puntPuntualidad,
-                puntajeAsistencia = puntAsistencia,
-                puntajePago = puntPago,
-                puntajeTrato = puntTrato,
-            )
+            if (perfil.reputacion == null) {
+                FulboCard {
+                    Text(
+                        text = "Aún no tienes calificaciones. Juega tus primeros partidos y aparecerán aquí.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = FulboColors.TextSecondary,
+                    )
+                }
+            } else {
+                PerfilReputacionCard(
+                    rating = perfil.reputacion,
+                    totalResenas = perfil.numCalificaciones,
+                    puntajePuntualidad = (perfil.repPuntualidad ?: 0.0).toFloat(),
+                    puntajeAsistencia = (perfil.repAsistencia ?: 0.0).toFloat(),
+                    puntajePago = (perfil.repPago ?: 0.0).toFloat(),
+                    puntajeTrato = (perfil.repTrato ?: 0.0).toFloat(),
+                )
+            }
         }
 
         item {
             PerfilEstadisticasRow(
-                partidosJugados = partidosJugadosMostrar,
-                semanasRacha = 1,
-                faltas = faltasMostrar,
+                partidosJugados = perfil.partidosJugados,
+                semanasRacha = 0,
+                faltas = perfil.faltas,
             )
         }
 
-        item {
-            PerfilResenasSection(resenas = resenasReales)
-        }
-
-        item {
-            Spacer(Modifier.height(spacing.sm))
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(spacing.sm),
-            ) {
-                FulboSecondaryButton(
-                    text = "Cerrar sesión",
-                    isEnabled = !isProcessing,
-                    onClick = {
-                        scope.launch {
-                            authRepository.cerrarSesion()
-                            onCerrarSesion()
-                        }
-                    },
-                )
-
-                TextButton(
-                    onClick = { mostrarDialogoEliminar = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isProcessing,
-                ) {
-                    Text(
-                        text = "Eliminar mi cuenta",
-                        color = FulboColors.Red,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-                Spacer(Modifier.height(spacing.lg))
+        if (onCerrarSesion != null) {
+            item {
+                FulboSecondaryButton(text = "Cerrar sesión", onClick = onCerrarSesion)
             }
         }
     }
@@ -257,12 +184,12 @@ private fun PerfilCabecera(
 
 @Composable
 private fun PerfilReputacionCard(
-    rating: Double?,
+    rating: Double,
     totalResenas: Int,
-    puntajePuntualidad: Float?,
-    puntajeAsistencia: Float?,
-    puntajePago: Float?,
-    puntajeTrato: Float?,
+    puntajePuntualidad: Float,
+    puntajeAsistencia: Float,
+    puntajePago: Float,
+    puntajeTrato: Float,
     modifier: Modifier = Modifier,
 ) {
     FulboCard(modifier = modifier) {
@@ -272,46 +199,29 @@ private fun PerfilReputacionCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                if (rating != null && totalResenas > 0) {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(
-                            text = rating.toString(),
-                            fontSize = 42.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = FulboColors.TextPrimary,
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "de 5",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = FulboColors.TextSecondary,
-                            modifier = Modifier.padding(bottom = 6.dp),
-                        )
-                    }
+                Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        text = "$totalResenas reseñas",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = FulboColors.TextSecondary,
-                    )
-                } else {
-                    Text(
-                        text = "Nuevo jugador",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = rating.toString(),
+                        fontSize = 42.sp,
                         fontWeight = FontWeight.Bold,
                         color = FulboColors.TextPrimary,
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Sin calificaciones aún",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "de 5",
+                        style = MaterialTheme.typography.titleMedium,
                         color = FulboColors.TextSecondary,
+                        modifier = Modifier.padding(bottom = 6.dp),
                     )
                 }
+                Text(
+                    text = "$totalResenas reseñas",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FulboColors.TextSecondary,
+                )
             }
 
-            if (rating != null && totalResenas > 0) {
-                StarRatingBar(rating = rating, starSize = 22.dp)
-            }
+            StarRatingBar(rating = rating, starSize = 22.dp)
         }
 
         Spacer(Modifier.height(18.dp))
@@ -329,7 +239,7 @@ private fun PerfilReputacionCard(
 @Composable
 private fun MetricaDesgloseFila(
     titulo: String,
-    puntaje: Float?,
+    puntaje: Float,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -345,7 +255,7 @@ private fun MetricaDesgloseFila(
         )
 
         LinearProgressIndicator(
-            progress = { if (puntaje != null) (puntaje / PUNTAJE_MAXIMO_CONDUCTA) else 0f },
+            progress = { puntaje / PUNTAJE_MAXIMO_CONDUCTA },
             modifier = Modifier
                 .weight(1f)
                 .height(8.dp)
@@ -357,10 +267,10 @@ private fun MetricaDesgloseFila(
         Spacer(Modifier.width(12.dp))
 
         Text(
-            text = puntaje?.toString() ?: "—",
+            text = puntaje.toString(),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
-            color = if (puntaje != null) FulboColors.TextPrimary else FulboColors.TextDisabled,
+            color = FulboColors.TextPrimary,
         )
     }
 }
@@ -458,50 +368,25 @@ private fun PerfilResenasSection(
 
         Spacer(Modifier.height(spacing.xs))
 
-        if (resenas.isEmpty()) {
-            FulboCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = spacing.md, horizontal = spacing.sm),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        text = "Aún no tienes reseñas",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = FulboColors.TextPrimary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Juega partidos con otros futbolistas para recibir calificaciones y comentarios de tus compañeros.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = FulboColors.TextSecondary,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
-                }
-            }
-        } else {
-            resenas.forEach { resena ->
-                FulboCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                ) {
-                    Text(
-                        text = "“${resena.texto}”",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontStyle = FontStyle.Italic,
-                        color = FulboColors.TextPrimary,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "— ${resena.autor}",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = FulboColors.Green,
-                    )
-                }
+        resenas.forEach { resena ->
+            FulboCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+            ) {
+                Text(
+                    text = "“${resena.texto}”",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontStyle = FontStyle.Italic,
+                    color = FulboColors.TextPrimary,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "— ${resena.autor}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = FulboColors.Green,
+                )
             }
         }
     }

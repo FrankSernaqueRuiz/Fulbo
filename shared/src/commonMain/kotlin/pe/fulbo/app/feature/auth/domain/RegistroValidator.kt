@@ -19,6 +19,13 @@ object RegistroValidator {
     private val EMAIL = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
     private val NOMBRE = Regex("^[\\p{L} '-]{2,50}$")
 
+    fun validarDni(dni: String): String? = when {
+        dni.isBlank() -> "Ingresa tu DNI"
+        !dni.all(Char::isDigit) -> "El DNI solo debe tener números"
+        dni.length != 8 -> "El DNI debe tener 8 dígitos"
+        else -> null
+    }
+
     fun validarNombre(valor: String, campo: String = "nombre"): String? = when {
         valor.isBlank() -> "Ingresa tu $campo"
         !NOMBRE.matches(valor.trim()) -> "El $campo no es válido"

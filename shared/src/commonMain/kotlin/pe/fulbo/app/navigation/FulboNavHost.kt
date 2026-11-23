@@ -1,7 +1,14 @@
 package pe.fulbo.app.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.koin.compose.viewmodel.koinViewModel
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -22,7 +29,11 @@ import androidx.navigation.toRoute
 import org.jetbrains.compose.resources.stringResource
 import pe.fulbo.app.core.designsystem.component.PlaceholderScreen
 import pe.fulbo.app.core.designsystem.theme.FulboColors
+import pe.fulbo.app.feature.auth.AuthViewModel
+import pe.fulbo.app.feature.auth.LoginScreen
+import pe.fulbo.app.feature.auth.RegistroScreen
 import pe.fulbo.app.feature.auth.WelcomeScreen
+import pe.fulbo.app.feature.auth.domain.PuntoDeEntrada
 import pe.fulbo.app.feature.canchas.CanchasRoute
 import pe.fulbo.app.feature.canchas.MapaScreen
 import pe.fulbo.app.feature.equipo.AlineacionScreen
@@ -34,24 +45,31 @@ import pe.fulbo.app.feature.onboarding.CreaTuPerfilScreen
 import pe.fulbo.app.feature.onboarding.TusDeportesScreen
 import pe.fulbo.app.feature.partidos.PartidosScreen
 import pe.fulbo.app.feature.partidos.PublicarPartidoScreen
-import pe.fulbo.app.feature.perfil.PerfilScreen
-
-import androidx.compose.runtime.remember
-import org.koin.compose.koinInject
-import pe.fulbo.app.feature.auth.LoginScreen
-import pe.fulbo.app.feature.auth.domain.AuthRepository
+import pe.fulbo.app.feature.perfil.PerfilRoute
 
 @Composable
-fun FulboNavHost(
-    navController: NavHostController = rememberNavController(),
-    authRepository: AuthRepository = koinInject(),
-) {
+fun FulboNavHost(navController: NavHostController = rememberNavController()) {
     val backStack by navController.currentBackStackEntryAsState()
     val destino = backStack?.destination
     val mostrarBarra = Pestana.entries.any { destino.esRuta(it.ruta) }
 
-    val startDestination = remember {
-        if (authRepository.estaAutenticado) Partidos else Bienvenida
+    // Un solo AuthViewModel para todo el flujo de entrada (los pasos del perfil se acumulan).
+    val authVm: AuthViewModel = koinViewModel()
+    val authState by authVm.uiState.collectAsStateWithLifecycle()
+    val inicio by authVm.inicio.collectAsStateWithLifecycle()
+
+    // Mientras se averigua si hay sesión y perfil, solo un loader (así no parpadea la bienvenida).
+    val puntoDeEntrada = inicio
+    if (puntoDeEntrada == null) {
+        Box(Modifier.fillMaxSize().background(FulboColors.Background), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = FulboColors.Green)
+        }
+        return
+    }
+
+    // Después del registro o login, la app queda dentro y no se puede volver con "atrás".
+    val irAPartidos: () -> Unit = {
+        navController.navigate(Partidos) { popUpTo(0) { inclusive = true } }
     }
 
     Scaffold(
@@ -60,76 +78,77 @@ fun FulboNavHost(
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = startDestination,
+            startDestination = when (puntoDeEntrada) {
+                PuntoDeEntrada.SIN_SESION -> Bienvenida
+                PuntoDeEntrada.SIN_PERFIL -> CreaTuPerfil
+                PuntoDeEntrada.CON_PERFIL -> Partidos
+            },
             modifier = Modifier.padding(padding),
         ) {
             // ---------- Onboarding y Autenticación ----------
             composable<Bienvenida> {
+                // Google y teléfono quedan para una etapa posterior: por ahora llevan al registro.
+                val aRegistro = { authVm.limpiarError(); navController.navigate(Registro) }
                 WelcomeScreen(
-                    onCrearCuenta = { navController.navigate(CreaTuPerfil) },
-                    onGoogle = { navController.navigate(Login) },
-                    onNumero = { navController.navigate(Login) },
-                    onIniciarSesion = { navController.navigate(Login) },
-                )
-            }
-
-            // Paso 1 de 2: Crea tu perfil (Mockup página 1)
-            composable<CreaTuPerfil> {
-                CreaTuPerfilScreen(
-                    onSiguiente = { nom, ape, ali, cor, pass, fec ->
-                        navController.navigate(
-                            TusDeportes(
-                                nombre = nom,
-                                apellido = ape,
-                                alias = ali,
-                                correo = cor,
-                                contrasena = pass,
-                                fechaNacimiento = fec,
-                            ),
-                        )
-                    },
-                )
-            }
-
-            // Paso 2 de 2: Tus deportes (Mockups páginas 11, 12, 13)
-            composable<TusDeportes> { entry ->
-                val datos = entry.toRoute<TusDeportes>()
-                TusDeportesScreen(
-                    datosRegistro = datos,
-                    onCrearPerfil = {
-                        navController.navigate(Partidos) {
-                            popUpTo(Bienvenida) { inclusive = true }
-                        }
-                    },
+                    onCrearCuenta = aRegistro,
+                    onGoogle = aRegistro,
+                    onNumero = aRegistro,
+                    onIniciarSesion = { authVm.limpiarError(); navController.navigate(Login) },
                 )
             }
 
             composable<Registro> {
-                CreaTuPerfilScreen(
-                    onSiguiente = { nom, ape, ali, cor, pass, fec ->
-                        navController.navigate(
-                            TusDeportes(
-                                nombre = nom,
-                                apellido = ape,
-                                alias = ali,
-                                correo = cor,
-                                contrasena = pass,
-                                fechaNacimiento = fec,
-                            ),
-                        )
+                RegistroScreen(
+                    estado = authState,
+                    onCrearCuenta = { correo, password, mayorDe16 ->
+                        authVm.registrar(correo, password, mayorDe16) {
+                            navController.navigate(CreaTuPerfil)
+                        }
+                    },
+                    onYaTengoCuenta = {
+                        authVm.limpiarError()
+                        navController.navigate(Login) { popUpTo<Registro> { inclusive = true } }
                     },
                 )
             }
 
             composable<Login> {
                 LoginScreen(
-                    onVolver = { navController.popBackStack() },
-                    onLoginExitoso = {
-                        navController.navigate(Partidos) {
-                            popUpTo(Bienvenida) { inclusive = true }
+                    estado = authState,
+                    onIniciarSesion = { correo, password ->
+                        authVm.iniciarSesion(correo, password) { destino ->
+                            when (destino) {
+                                PuntoDeEntrada.CON_PERFIL -> irAPartidos()
+                                // Se registró pero no terminó el perfil: lo retoma.
+                                else -> navController.navigate(CreaTuPerfil)
+                            }
                         }
                     },
-                    onIrARegistro = { navController.navigate(CreaTuPerfil) },
+                    onCrearCuenta = {
+                        authVm.limpiarError()
+                        navController.navigate(Registro) { popUpTo<Login> { inclusive = true } }
+                    },
+                )
+            }
+
+            // Paso 1 de 2: Crea tu perfil (Mockup página 1)
+            composable<CreaTuPerfil> {
+                CreaTuPerfilScreen(
+                    error = authState.error,
+                    onSiguiente = { nombre, apellido, alias ->
+                        authVm.guardarBorrador(nombre, apellido, alias) {
+                            navController.navigate(TusDeportes)
+                        }
+                    },
+                )
+            }
+
+            // Paso 2 de 2: Tus deportes (Mockups páginas 11, 12, 13)
+            composable<TusDeportes> {
+                TusDeportesScreen(
+                    isLoading = authState.cargando,
+                    error = authState.error,
+                    onCrearPerfil = { deportes -> authVm.crearPerfil(deportes) { irAPartidos() } },
                 )
             }
 
@@ -138,7 +157,6 @@ fun FulboNavHost(
             composable<Partidos> {
                 PartidosScreen(
                     onPublicarPartido = { navController.navigate(PublicarPartido()) },
-                    onPartidoClick = { id -> navController.navigate(SalaPartido(id)) },
                 )
             }
 
@@ -158,16 +176,15 @@ fun FulboNavHost(
                     onVerAlineacion = { navController.navigate(Alineacion) },
                     onVerMarcos = { navController.navigate(MarcosRango) },
                     onEditarEquipo = { navController.navigate(EditarEquipo) },
-                    onIrAPremium = { navController.navigate(Premium) },
                 )
             }
 
             // 4. Perfil de usuario (Mockup página 4)
             composable<Perfil> {
-                PerfilScreen(
+                PerfilRoute(
                     onCerrarSesion = {
-                        navController.navigate(Bienvenida) {
-                            popUpTo(0) { inclusive = true }
+                        authVm.cerrarSesion {
+                            navController.navigate(Bienvenida) { popUpTo(0) { inclusive = true } }
                         }
                     },
                 )

@@ -61,8 +61,6 @@ private val RESULTADOS_EJEMPLO: List<ResultadoPartidoItem> = listOf(
  * @param onVerAlineacion Abre el tablero táctico.
  * @param onVerMarcos Abre la pantalla de gamificación de rangos.
  * @param onEditarEquipo Abre la edición y configuración del equipo.
- * @param onIrAPremium Navega a la pantalla de suscripción Premium.
- * @param isPremium Indica si el usuario cuenta con el plan activo.
  * @param modifier Modificador de Compose.
  */
 @Composable
@@ -71,64 +69,9 @@ fun EquipoScreen(
     onVerAlineacion: () -> Unit,
     onVerMarcos: () -> Unit,
     onEditarEquipo: () -> Unit,
-    onIrAPremium: () -> Unit = {},
-    isPremium: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val spacing = MaterialTheme.spacing
-
-    if (!isPremium) {
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .background(FulboColors.Background)
-                .padding(spacing.screen),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(FulboColors.GreenContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.EmojiEvents,
-                    contentDescription = null,
-                    tint = FulboColors.Green,
-                    modifier = Modifier.size(44.dp),
-                )
-            }
-
-            Spacer(Modifier.height(spacing.lg))
-
-            Text(
-                text = "Equipos Fijos es Premium",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = FulboColors.TextPrimary,
-            )
-
-            Spacer(Modifier.height(spacing.sm))
-
-            Text(
-                text = "Arma tu equipo semanal, registra alineaciones tácticas, mantén tu racha de partidos y sube de rango de Bronce a Leyenda con FULBO Premium.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = FulboColors.TextSecondary,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.padding(horizontal = spacing.md),
-            )
-
-            Spacer(Modifier.height(spacing.xl))
-
-            FulboPrimaryButton(
-                text = "Conoce FULBO Premium",
-                onClick = onIrAPremium,
-            )
-        }
-        return
-    }
 
     LazyColumn(
         modifier = modifier
