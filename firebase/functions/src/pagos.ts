@@ -26,11 +26,17 @@ export const webhookPago = onRequest({ secrets: [WEBHOOK_SECRET] }, async (req, 
   if (tipo === "cobro_aprobado") {
     const vence = Timestamp.fromMillis(Date.now() + DIAS_PLAN * 86_400_000);
     await db.runTransaction(async (tx) => {
+      const uRef = refUsuario(usuarioUid);
+      const uSnap = await tx.get(uRef);
+      if (!uSnap.exists) {
+        console.error(`Usuario ${usuarioUid} no encontrado para activación Premium.`);
+        return;
+      }
       tx.set(susRef, {
         usuario_uid: usuarioUid, estado: "activa", monto, moneda: "PEN",
         id_pasarela: idPasarela, inicia_en: FieldValue.serverTimestamp(), vence_en: vence,
       }, { merge: true });
-      tx.update(refUsuario(usuarioUid), { plan: "premium", plan_vence_en: vence });
+      tx.update(uRef, { plan: "premium", plan_vence_en: vence });
     });
   } else {
     // Cobro rechazado: 3 dias de gracia antes de volver a gratuito

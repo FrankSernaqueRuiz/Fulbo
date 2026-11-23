@@ -11,11 +11,6 @@ class RegistroValidatorTest {
 
     private val hoy = LocalDate(2026, 11, 9)
 
-    @Test fun `dni valido de 8 digitos`() { assertNull(RegistroValidator.validarDni("45678912")) }
-    @Test fun `dni con letras es invalido`() { assertNotNull(RegistroValidator.validarDni("4567891A")) }
-    @Test fun `dni corto es invalido`() { assertNotNull(RegistroValidator.validarDni("1234567")) }
-    @Test fun `dni vacio es invalido`() { assertNotNull(RegistroValidator.validarDni("")) }
-
     @Test fun `cumple 16 hoy puede registrarse`() {
         assertNull(RegistroValidator.validarEdad(LocalDate(2010, 11, 9), hoy))
     }

@@ -5,13 +5,13 @@ Todo lo que vive en Firebase y no en la app: reglas de seguridad, indices y Clou
 ```
 firebase/
 ├── firebase.json            configuracion de la CLI y de los emuladores
-├── .firebaserc              alias de proyectos: dev (fulbo-dev) y prod (fulbo-prod)
+├── .firebaserc              alias de proyectos: dev (fulbo-3b600) y prod (fulboprod-7af84)
 ├── firestore.rules          quien puede leer y escribir que
 ├── firestore.indexes.json   indices compuestos que piden las consultas
 ├── functions/               Cloud Functions en TypeScript (Node 22)
 │   └── src/
 │       ├── comun.ts         region, referencias, notificaciones push
-│       ├── perfil.ts        completarPerfil (DNI con HMAC, edad >= 16)
+│       ├── perfil.ts        completarPerfil (edad >= 16)
 │       ├── inscripciones.ts solicitarInscripcion, resolverSolicitud, darseDeBaja
 │       ├── partidos.ts      alCrearPartido, cancelarPartido, finalizarPartido
 │       ├── reputacion.ts    alCrearCalificacion (recalcula rep_*)
@@ -30,7 +30,6 @@ cd firebase
 # edita .firebaserc con los IDs reales de tus proyectos
 firebase use dev
 cd functions && npm install && cd ..
-firebase functions:secrets:set DNI_PEPPER          # pega una clave larga y aleatoria
 firebase functions:secrets:set PASARELA_WEBHOOK_SECRET
 ```
 
@@ -43,7 +42,7 @@ cd tests && npm install && npm test   # prueba las reglas
 ```
 
 Para los secretos en el emulador crea `functions/.secret.local` con
-`DNI_PEPPER=cualquier-clave-de-prueba` (no se sube a git).
+`PASARELA_WEBHOOK_SECRET=cualquier-clave-de-prueba` (no se sube a git).
 
 ## Desplegar
 

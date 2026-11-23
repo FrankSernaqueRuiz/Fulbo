@@ -20,7 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
+import org.jetbrains.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.stringResource
@@ -93,6 +93,6 @@ fun WelcomeScreen(
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF0B0F14, heightDp = 800)
+@Preview
 @Composable
 private fun WelcomePreview() = FulboTheme { WelcomeScreen({}, {}, {}, {}) }
